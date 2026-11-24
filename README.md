@@ -10,6 +10,12 @@ GitHub Pages(화면) + Firebase Firestore(응답 저장) 구성입니다.
 | `js/config.js` | Firebase 웹 설정값 입력 |
 | `firestore.rules` | Firestore 보안 규칙 |
 
+## 배포 정보 (2026-11-24)
+- 설문: https://emptybreeding.github.io/gg-env-workshop-survey/
+- 결과: https://emptybreeding.github.io/gg-env-workshop-survey/admin.html
+- Firebase 프로젝트: `gg-env-survey-2026` (Firestore 서울, 이메일/비밀번호 로그인)
+- 관리자 이메일은 공개 저장소에 올리지 않았어요. 규칙을 다시 올릴 때는 `firestore.rules`의 `ADMIN_EMAIL@example.com`을 관리자 이메일로 바꾼 사본으로 배포하세요.
+
 ## 문항 구성
 - 응답자 정보(선택): A. 소속
 - 만족도 10문항(필수, 5점 척도): 전반 만족도, 일시·장소, 사전 안내·홍보, 진행, 성과공유회, 시상식, 체험 프로그램, 역량강화 강연, 교류·네트워크, 재참여 의향
