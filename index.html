@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>만족도 조사 | 2026년 제3차 경기도 환경교육 관계자 워크숍</title>
+  <meta name="description" content="2026년 제3차 경기도 환경교육 관계자 워크숍 참여자 만족도 조사" />
+  <meta property="og:title" content="2026년 제3차 경기도 환경교육 관계자 워크숍 만족도 조사" />
+  <meta property="og:image" content="img/kv.jpg" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero"><img src="img/kv.jpg" alt="2026년 제3차 경기도 환경교육 관계자 워크숍" /></div>
+
+    <form id="form" novalidate>
+      <section class="intro">
+        <h1 id="t-title"></h1>
+        <p class="sub" id="t-sub"></p>
+        <p>워크숍에 참여해 주셔서 감사합니다. 더 나은 환경교육 사업을 위해 잠시 시간을 내어 응답해 주세요.</p>
+        <p>응답은 <b>익명</b>으로 수집되며 사업 개선을 위한 통계 자료로만 활용됩니다. (약 2분 소요)</p>
+        <span class="meta" id="t-meta"></span>
+      </section>
+
+      <div class="section-title">응답자 정보 (선택)</div>
+      <div id="profile"></div>
+
+      <div class="section-title">만족도 문항</div>
+      <div id="questions"></div>
+
+      <div class="section-title">자유 의견</div>
+      <div id="open"></div>
+
+      <button class="btn" type="submit" id="submit">제출하기</button>
+      <div class="error" id="error" role="alert"></div>
+      <p class="notice"><span class="req">*</span> 표시는 필수 문항입니다.</p>
+    </form>
+
+    <section class="done hidden" id="done">
+      <div class="icon">✓</div>
+      <h2>응답이 제출되었습니다</h2>
+      <p>소중한 의견 감사합니다.</p>
+      <p>보내주신 의견은 2027년 경기도 환경교육 사업에 반영하겠습니다.</p>
+    </section>
+
+    <p class="foot" id="t-host"></p>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/survey-data.js"></script>
+  <script type="module">
+    import { fb } from './js/firebase.js';
+
+    const S = window.SURVEY;
+    const $ = (s) => document.querySelector(s);
+    const DONE_KEY = `survey-done:${S.id}`;
+
+    $('#t-title').textContent = S.title;
+    $('#t-sub').textContent = S.subtitle;
+    $('#t-meta').textContent = S.eventInfo;
+    $('#t-host').textContent = `주최 · ${S.host}`;
+
+    const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    // 응답자 정보
+    $('#profile').innerHTML = S.profile.map((p, i) => `
+      <div class="q" data-id="${p.id}">
+        <p class="label"><span class="num">${String.fromCharCode(65 + i)}.</span><span>${esc(p.label)}</span></p>
+        ${p.type === 'multi' ? '<p class="hint">복수 선택 가능</p>' : ''}
+        <div class="choices">
+          ${p.options.map((o) => `
+            <label><input type="${p.type === 'multi' ? 'checkbox' : 'radio'}" name="${p.id}" value="${esc(o)}" />${esc(o)}</label>`).join('')}
+        </div>
+      </div>`).join('');
+
+    // 만족도 10문항
+    $('#questions').innerHTML = S.questions.map((q, i) => {
+      const labels = S[q.scale];
+      return `
+      <div class="q" data-id="${q.id}" role="radiogroup" aria-labelledby="l-${q.id}">
+        <p class="label" id="l-${q.id}"><span class="num">${i + 1}.</span><span>${esc(q.label)}<span class="req">*</span></span></p>
+        <div class="scale">
+          ${[1, 2, 3, 4, 5].map((v) => `
+            <label><input type="radio" name="${q.id}" value="${v}" /><span><b>${v}</b>${labels[v - 1]}</span></label>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+
+    // 서술형
+    $('#open').innerHTML = `
+      <div class="q" data-id="${S.open.id}">
+        <p class="label"><span class="num">11.</span><span>${esc(S.open.label)}</span></p>
+        <textarea name="${S.open.id}" maxlength="${S.open.max}" placeholder="자유롭게 작성해 주세요."></textarea>
+        <div class="count"><span id="cnt">0</span> / ${S.open.max}</div>
+      </div>`;
+    const ta = document.querySelector(`textarea[name=${S.open.id}]`);
+    ta.addEventListener('input', () => { $('#cnt').textContent = ta.value.length; });
+
+    document.querySelectorAll('.scale input').forEach((el) =>
+      el.addEventListener('change', () => el.closest('.q').classList.remove('missing')));
+
+    function showDone() {
+      $('#form').classList.add('hidden');
+      $('#done').classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    try { if (localStorage.getItem(DONE_KEY)) showDone(); } catch (e) {}
+
+    $('#form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      $('#error').textContent = '';
+      const fd = new FormData(e.target);
+      const data = {};
+      let firstMissing = null;
+      for (const q of S.questions) {
+        const v = Number(fd.get(q.id));
+        const box = document.querySelector(`.q[data-id=${q.id}]`);
+        if (!v) { box.classList.add('missing'); firstMissing ??= box; }
+        data[q.id] = v;
+      }
+      if (firstMissing) {
+        $('#error').textContent = '응답하지 않은 필수 문항이 있습니다.';
+        firstMissing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      data.org = fd.get('org') || '';
+      data.programs = fd.getAll('programs');
+      data[S.open.id] = (fd.get(S.open.id) || '').trim().slice(0, S.open.max);
+
+      const btn = $('#submit');
+      btn.disabled = true; btn.textContent = '제출 중…';
+      try {
+        const { db, fs } = await fb();
+        data.createdAt = fs.serverTimestamp();
+        await fs.addDoc(fs.collection(db, S.id), data);
+        try { localStorage.setItem(DONE_KEY, '1'); } catch (e) {}
+        showDone();
+      } catch (err) {
+        console.error(err);
+        $('#error').textContent = '제출 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+        btn.disabled = false; btn.textContent = '제출하기';
+      }
+    });
+  </script>
+</body>
+</html>

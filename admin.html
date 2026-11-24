@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>만족도 조사 결과 | 관리자</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="admin-body">
+  <!-- 로그인 -->
+  <section class="login hidden" id="login">
+    <h1>만족도 조사 결과 보기</h1>
+    <p>Firebase에 등록한 관리자 계정으로 로그인하세요.</p>
+    <form id="loginForm">
+      <input type="email" id="email" placeholder="이메일" autocomplete="username" required />
+      <input type="password" id="pw" placeholder="비밀번호" autocomplete="current-password" required />
+      <button class="btn" type="submit" style="margin-top:6px">로그인</button>
+      <div class="error" id="loginErr"></div>
+    </form>
+  </section>
+
+  <section class="login hidden" id="setup">
+    <h1>Firebase 설정이 필요합니다</h1>
+    <p>js/config.js 에 Firebase 웹 설정값을 입력한 뒤 다시 배포하세요. 자세한 방법은 README.md를 참고하세요.</p>
+  </section>
+
+  <!-- 대시보드 -->
+  <main class="admin hidden" id="dash">
+    <header>
+      <div>
+        <h1 id="d-title"></h1>
+        <p id="d-meta"></p>
+      </div>
+      <div class="tools">
+        <button id="csv" class="primary">엑셀(CSV) 다운로드</button>
+        <button onclick="window.print()">인쇄 / PDF</button>
+        <button id="logout">로그아웃</button>
+      </div>
+    </header>
+
+    <div class="kpis">
+      <div class="kpi"><div class="k">참여 인원</div><div class="v" id="k-n">0<small>명</small></div></div>
+      <div class="kpi"><div class="k">전체 평균 (10문항)</div><div class="v" id="k-avg">-<small>/ 5점</small></div></div>
+      <div class="kpi"><div class="k">전반적 만족도 (1번)</div><div class="v" id="k-q1">-<small>/ 5점</small></div></div>
+      <div class="kpi"><div class="k">긍정 응답률 (4·5점)</div><div class="v" id="k-pos">-<small>%</small></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>문항별 결과</h2>
+      <div class="legend" id="legend"></div>
+      <div id="qlist"></div>
+    </div>
+
+    <div class="panel">
+      <h2>응답자 정보</h2>
+      <div id="profiles"></div>
+    </div>
+
+    <div class="panel">
+      <h2>11. 자유 의견 <span id="openN" style="color:var(--sub);font-weight:500;font-size:14px"></span></h2>
+      <ul class="opens" id="opens"></ul>
+    </div>
+
+    <div class="panel no-print">
+      <h2>설문 QR 코드</h2>
+      <div class="qr-box">
+        <canvas id="qr" width="720" height="720"></canvas>
+        <div>
+          <p class="url" id="surveyUrl"></p>
+          <div class="tools"><button id="qrDown">QR 이미지(PNG) 다운로드</button><button id="copy">링크 복사</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="foot" id="updated"></p>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/survey-data.js"></script>
+  <script src="js/qrcode.js"></script>
+  <script type="module">
+    import { fb, firebaseReady } from './js/firebase.js';
+
+    const S = window.SURVEY;
+    const $ = (s) => document.querySelector(s);
+    const show = (id) => ['login', 'setup', 'dash'].forEach((k) => $('#' + k).classList.toggle('hidden', k !== id));
+    const COLORS = ['#c2410c', '#f59e0b', '#cbd5d0', '#7cc24a', '#1f8a4c']; // 1~5점
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const surveyUrl = new URL('./', location.href).href;
+    let rows = [];
+    let unsub = null;
+
+    $('#d-title').textContent = `${S.title} ${S.subtitle} 결과`;
+    $('#legend').innerHTML = [5, 4, 3, 2, 1].map((v) => `<span style="--c:${COLORS[v - 1]}">${v}점</span>`).join('');
+
+    // ── QR (녹색 테두리) ──
+    function drawQR() {
+      const qr = qrcode(0, 'M');
+      qr.addData(surveyUrl); qr.make();
+      const n = qr.getModuleCount(), cv = $('#qr'), ctx = cv.getContext('2d');
+      const size = cv.width, border = 26, quiet = 34;
+      const cell = (size - 2 * (border + quiet)) / n;
+      ctx.fillStyle = '#22b14c'; ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = '#fff'; ctx.fillRect(border, border, size - 2 * border, size - 2 * border);
+      ctx.fillStyle = '#000';
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+        if (qr.isDark(r, c)) ctx.fillRect(border + quiet + c * cell, border + quiet + r * cell, Math.ceil(cell), Math.ceil(cell));
+      $('#surveyUrl').textContent = surveyUrl;
+    }
+    $('#qrDown').onclick = () => { const a = document.createElement('a'); a.href = $('#qr').toDataURL('image/png'); a.download = '만족도조사_QR.png'; a.click(); };
+    $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(surveyUrl); $('#copy').textContent = '복사됨'; } catch (e) {} };
+
+    // ── 집계 ──
+    const avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : NaN;
+    const f2 = (x) => isNaN(x) ? '-' : x.toFixed(2);
+
+    function render() {
+      const n = rows.length;
+      $('#k-n').innerHTML = `${n}<small>명</small>`;
+      const all = [], pos = [];
+      S.questions.forEach((q) => rows.forEach((r) => { if (r[q.id]) { all.push(r[q.id]); pos.push(r[q.id] >= 4 ? 1 : 0); } }));
+      $('#k-avg').innerHTML = `${f2(avg(all))}<small>/ 5점</small>`;
+      $('#k-q1').innerHTML = `${f2(avg(rows.map((r) => r.q1).filter(Boolean)))}<small>/ 5점</small>`;
+      $('#k-pos').innerHTML = `${pos.length ? (avg(pos) * 100).toFixed(1) : '-'}<small>%</small>`;
+
+      $('#qlist').innerHTML = S.questions.map((q, i) => {
+        const vals = rows.map((r) => r[q.id]).filter(Boolean);
+        const cnt = [1, 2, 3, 4, 5].map((v) => vals.filter((x) => x === v).length);
+        const bar = vals.length
+          ? [5, 4, 3, 2, 1].map((v) => cnt[v - 1] ? `<i style="width:${cnt[v - 1] / vals.length * 100}%;background:${COLORS[v - 1]}" title="${v}점 ${cnt[v - 1]}명"></i>` : '').join('')
+          : '';
+        return `<div class="qrow"><div class="t"><b>${i + 1}</b>${esc(q.label)}</div><div class="stack">${bar}</div><div class="avg">${f2(avg(vals))}</div></div>`;
+      }).join('');
+
+      $('#profiles').innerHTML = S.profile.map((p) => {
+        const counts = p.options.map((o) => rows.filter((r) => p.type === 'multi' ? (r[p.id] || []).includes(o) : r[p.id] === o).length);
+        const base = p.type === 'multi' ? n : rows.filter((r) => r[p.id]).length;
+        return `<p style="font-weight:700;font-size:14px;margin:14px 0 6px">${esc(p.label)}</p><div class="bars">${p.options.map((o, k) => `
+          <div class="row"><span>${esc(o)}</span><div class="track"><div class="fill" style="width:${base ? counts[k] / base * 100 : 0}%"></div></div><span class="n">${counts[k]}명</span></div>`).join('')}</div>`;
+      }).join('');
+
+      const opens = rows.filter((r) => (r[S.open.id] || '').trim());
+      $('#openN').textContent = `(${opens.length}건)`;
+      $('#opens').innerHTML = opens.length
+        ? opens.map((r) => `<li><time>${r._t ? r._t.toLocaleString('ko-KR') : ''}</time>${esc(r[S.open.id])}</li>`).join('')
+        : '<li class="empty">아직 작성된 의견이 없습니다.</li>';
+      $('#updated').textContent = `마지막 갱신 ${new Date().toLocaleString('ko-KR')} · 실시간 반영`;
+    }
+
+    // ── CSV (엑셀 한글 깨짐 방지 BOM 포함) ──
+    $('#csv').onclick = () => {
+      const head = ['번호', '응답일시', 'A. 소속', 'B. 참여 프로그램', ...S.questions.map((q, i) => `${i + 1}. ${q.label}`), `11. 자유 의견`];
+      const body = rows.map((r, i) => [i + 1, r._t ? r._t.toLocaleString('ko-KR') : '', r.org || '', (r.programs || []).join(' / '),
+        ...S.questions.map((q) => r[q.id] ?? ''), r[S.open.id] || '']);
+      const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+      const csv = '﻿' + [head, ...body].map((row) => row.map(q).join(',')).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = `만족도조사_결과_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    };
+
+    // ── 인증 & 데이터 ──
+    async function start() {
+      if (!firebaseReady()) { show('setup'); return; }
+      const { db, auth, fs, authMod } = await fb();
+      authMod.onAuthStateChanged(auth, (user) => {
+        if (unsub) { unsub(); unsub = null; }
+        if (!user) { show('login'); return; }
+        show('dash');
+        $('#d-meta').textContent = `${S.eventInfo} · ${user.email}`;
+        drawQR();
+        const qy = fs.query(fs.collection(db, S.id), fs.orderBy('createdAt', 'asc'));
+        unsub = fs.onSnapshot(qy, (snap) => {
+          rows = snap.docs.map((d) => { const x = d.data(); x._t = x.createdAt?.toDate?.(); return x; });
+          render();
+        }, (err) => { console.error(err); $('#updated').textContent = '데이터를 불러오지 못했습니다: ' + err.code; });
+      });
+      $('#loginForm').onsubmit = async (e) => {
+        e.preventDefault(); $('#loginErr').textContent = '';
+        try { await authMod.signInWithEmailAndPassword(auth, $('#email').value, $('#pw').value); }
+        catch (err) { $('#loginErr').textContent = '이메일 또는 비밀번호를 확인해 주세요.'; }
+      };
+      $('#logout').onclick = () => authMod.signOut(auth);
+    }
+    start().catch((e) => { console.error(e); show('setup'); });
+  </script>
+</body>
+</html>
