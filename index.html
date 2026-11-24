@@ -124,7 +124,6 @@
         return;
       }
       data.org = fd.get('org') || '';
-      data.programs = fd.getAll('programs');
       data[S.open.id] = (fd.get(S.open.id) || '').trim().slice(0, S.open.max);
 
       const btn = $('#submit');

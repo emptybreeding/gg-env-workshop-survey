@@ -149,8 +149,8 @@
 
     // ── CSV (엑셀 한글 깨짐 방지 BOM 포함) ──
     $('#csv').onclick = () => {
-      const head = ['번호', '응답일시', 'A. 소속', 'B. 참여 프로그램', ...S.questions.map((q, i) => `${i + 1}. ${q.label}`), `11. 자유 의견`];
-      const body = rows.map((r, i) => [i + 1, r._t ? r._t.toLocaleString('ko-KR') : '', r.org || '', (r.programs || []).join(' / '),
+      const head = ['번호', '응답일시', 'A. 소속', ...S.questions.map((q, i) => `${i + 1}. ${q.label}`), `11. 자유 의견`];
+      const body = rows.map((r, i) => [i + 1, r._t ? r._t.toLocaleString('ko-KR') : '', r.org || '',
         ...S.questions.map((q) => r[q.id] ?? ''), r[S.open.id] || '']);
       const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
       const csv = '﻿' + [head, ...body].map((row) => row.map(q).join(',')).join('\r\n');

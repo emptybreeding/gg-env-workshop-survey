@@ -22,12 +22,11 @@ service cloud.firestore {
     }
 
     function validResponse(d) {
-      return d.keys().hasOnly(['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10','q11','org','programs','createdAt'])
+      return d.keys().hasOnly(['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10','q11','org','createdAt'])
         && score(d.q1) && score(d.q2) && score(d.q3) && score(d.q4) && score(d.q5)
         && score(d.q6) && score(d.q7) && score(d.q8) && score(d.q9) && score(d.q10)
         && d.q11 is string && d.q11.size() <= 1000
         && d.org is string && d.org.size() <= 50
-        && d.programs is list && d.programs.size() <= 10
         && d.createdAt == request.time;
     }
   }
